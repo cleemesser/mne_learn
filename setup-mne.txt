@@ -1,0 +1,37 @@
+$ curl -O https://raw.githubusercontent.com/mne-tools/mne-python/master/environment.yml
+$ conda env create -f environment.yml
+$ conda activate mne
+
+make sure that environment variables are setup
+export MNE_ROOT=/usr/local/MNE-C
+export MNE_DATASETS_SAMPLE_PATH="$MNE_ROOT/data"
+export PATH="$PATH:$MNE_ROOT/bin"
+
+
+MNE-C
+-----
+https://martinos.org/mne/stable/install_mne_c.html
+
+You can download a free runtime distribution of Matlab with the libraries necessary to run Matlab code from, https://www.mathworks.com/products/compiler/matlab-runtime.html
+
+
+
+
+install mayavi extension for jupyter notebook
+---------------------------------------------
+$ jupyter nbextension install --py mayavi --user
+$ jupyter nbextension enable mayavi --user --py
+
+Then in he notebook you can do:
+  from mayavi import mlab
+  mlab.init_notebook()
+
+
+
+
+
+################
+# note in the past to get mayavi working (with older qt versions) I used the menpo conda repo.
+ex:
+  conda create -n menpo36 --clone torchcuda91
+
