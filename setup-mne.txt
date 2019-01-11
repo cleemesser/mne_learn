@@ -1,11 +1,15 @@
 $ curl -O https://raw.githubusercontent.com/mne-tools/mne-python/master/environment.yml
 $ conda env create -f environment.yml
 $ conda activate mne
+# there may be some special extas to do for mac os
+# but this even works in basic form at least on windows 10!
+
 
 make sure that environment variables are setup
 export MNE_ROOT=/usr/local/MNE-C
 export MNE_DATASETS_SAMPLE_PATH="$MNE_ROOT/data"
 export PATH="$PATH:$MNE_ROOT/bin"
+export LD
 
 
 MNE-C
@@ -33,5 +37,6 @@ Then in he notebook you can do:
 ################
 # note in the past to get mayavi working (with older qt versions) I used the menpo conda repo.
 ex:
-  conda create -n menpo36 --clone torchcuda91
+  conda create -n menpo36  mayavi -c menpo
+
 

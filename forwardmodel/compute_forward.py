@@ -9,6 +9,8 @@ subject = 'sample'  # use the downloaded sample
 # The transformation file obtained by coregistration
 trans = data_path + '/MEG/sample/sample_audvis_raw-trans.fif'
 
+
+# setup source space
 src = mne.setup_source_space(subject, spacing='oct6',
                              subjects_dir=subjects_dir, add_dist=False)
 print(src)
@@ -17,7 +19,7 @@ print(src)
 conductivity = (0.3,)  # for single layer (MEG)
 # EEG
 #conductivity = (0.3, 0.006, 0.3)  # for three layers
-#conductivity = (0.3, 0.010, 0.3)  # for three layers
+conductivity3 = (0.3, 0.010, 0.3)  # for three layers
 
 model = mne.make_bem_model(subject=subject, ico=4,
                            conductivity=conductivity,
@@ -31,3 +33,4 @@ print(fwd)
 
 leadfield = fwd['sol']['data']
 print("Leadfield size : %d sensors x %d dipoles" % leadfield.shape)
+
