@@ -31,6 +31,15 @@ Then in he notebook you can do:
   mlab.init_notebook()
 
 
+remote TurboVNC use
+-------------------
+on host install virtualgl and turbovnc
+on client install turbovnc
+
+use vglrun ipython
+then can interact with mlab based graphics
+
+(note as of 1/2019, the notebook option is hanging)
 
 
 
