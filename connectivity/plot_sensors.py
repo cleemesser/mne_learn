@@ -33,3 +33,5 @@ for node in nodes_shown:
                 color=(0, 0, 0))
 
 mlab.view(135, 80)
+# TODO: fix trans for this example 
+print('clearly need to fix the transformation to head coordinates w/ a rotation in the sagital plane')
