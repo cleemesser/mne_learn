@@ -103,6 +103,7 @@ from surfer import Brain  # noqa
 brain = Brain('sample', 'lh', 'inflated', subjects_dir=subjects_dir)
 surf = brain.geo['lh']
 
+
 vertidx = np.where(src[0]['inuse'])[0]
 
 mlab.points3d(surf.x[vertidx], surf.y[vertidx],

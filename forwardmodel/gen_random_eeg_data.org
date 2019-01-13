@@ -1,0 +1,258 @@
+
+
+#+BEGIN_SRC ipython :session :tangle yes
+
+get_ipython().run_line_magic('matplotlib', 'inline')
+# %matplotlib qt5
+
+import mne
+import numpy as np
+from mne.datasets import sample
+import matplotlib.pyplot as plt
+import h5py
+import eeghdf
+import eegvis
+import eegvis.stacklineplot as slplot
+
+print(mne.__version__)
+a = 10
+#+END_SRC
+
+#+RESULTS:
+:RESULTS:
+# Out[11]:
+# output
+: 0.17.0
+: 
+:END:
+
+#+BEGIN_SRC ipython :session
+print(a)
+#+END_SRC
+
+#+RESULTS:
+:RESULTS:
+# Out[12]:
+# output
+: 10
+: 
+:END:
+
+#+BEGIN_SRC ipython :session :results raw drawer  :tangle yes
+data_path = sample.data_path()
+raw_fname = data_path + '/MEG/sample/sample_audvis_raw.fif'
+info = mne.io.read_info(raw_fname) 
+fwd = mne.read_forward_solution("sample_forward_model-fwd.fif")
+
+
+# In[4]:
+
+
+fwd_fixed = mne.convert_forward_solution(fwd, surf_ori=True, force_fixed=True,use_cps=True)
+
+
+# In[5]:
+
+
+leadfield = fwd_fixed['sol']['data']
+print("Leadfield size : %d sensors x %d dipoles" % leadfield.shape)
+
+
+
+#+END_SRC
+
+#+RESULTS:
+:RESULTS:
+# Out[13]:
+# output
+:     Read a total of 3 projection items:
+:         PCA-v1 (1 x 102)  idle
+:         PCA-v2 (1 x 102)  idle
+:         PCA-v3 (1 x 102)  idle
+: Reading forward solution from sample_forward_model-fwd.fif...
+:     Reading a source space...
+:     [done]
+:     Reading a source space...
+:     [done]
+:     2 source spaces read
+:     Desired named matrix (kind = 3523) not available
+:     Read EEG forward solution (7498 sources, 60 channels, free orientations)
+:     Source spaces transformed to the forward solution coordinate frame
+:     No patch info available. The standard source space normals will be employed in the rotation to the local surface coordinates....
+:     Changing to fixed-orientation forward solution with surface-based source orientations...
+:     [done]
+: Leadfield size : 60 sensors x 7498 dipoles
+: 
+:END:
+
+
+#+BEGIN_SRC ipython :session :results raw drawer  :tangle yes
+leadfield = fwd_fixed['sol']['data']
+print("Leadfield size : %d sensors x %d dipoles" % leadfield.shape)
+
+#+END_SRC
+
+#+RESULTS:
+:RESULTS:
+# Out[14]:
+# output
+: Leadfield size : 60 sensors x 7498 dipoles
+: 
+:END:
+
+Now let's try generating some random data for the source activity. We will set the sample rate at $fs_gen$ Hz and generate 10s of activity.
+
+To see what size data we need, we follow https://martinos.org/mne/dev/auto_tutorials/plot_forward.html and use the shape of the leadfield data to determine how many sensors and dipoles total there are.
+It seems that the vertices have an index. It looks this is in the forward solution, fwd_fixed['src'] data structure.
+
+#+BEGIN_SRC ipython :session :results raw drawer  :tangle yes
+
+n_dipoles = leadfield.shape[1]
+n_sensors = leadfield.shape[0]
+vertices = [src_hemi['vertno'] for src_hemi in fwd_fixed['src']] # might need these
+fs_gen = 200
+time_step = 1.0/fs_gen # sample freq = 200 was 0.5
+n_times = 10 * fs_gen  # try 10 s of generation
+
+# generate random source dipole data
+z = np.dot(np.random.randn(n_dipoles, n_sensors), np.random.randn(n_sensors, n_times)) * 1e-9
+
+
+#+END_SRC
+
+#+RESULTS:
+:RESULTS:
+# Out[15]:
+:END:
+
+Look a little more closely at the vertices.
+#+BEGIN_SRC ipython :session :results raw drawer  :tangle yes
+# determine vertex number of ??? something in the fwd_fixed solution
+# vertices = [src_hemi['vertno'] for src_hemi in fwd_fixed['src']]
+len(vertices)
+vertices
+#+END_SRC
+
+#+RESULTS:
+:RESULTS:
+# Out[16]:
+# text/plain
+: [array([   841,   1170,   1329, ..., 155249, 155323, 155330]),
+:  array([  1492,   1512,   2023, ..., 156649, 156704, 156838])]
+:END:
+
+Try out some latex.
+$f(x) \int x_i^2 dx$
+
+#+RESULTS:
+:RESULTS:
+# Out[12]:
+# text/plain
+: [array([   841,   1170,   1329, ..., 155249, 155323, 155330]),
+:  array([  1492,   1512,   2023, ..., 156649, 156704, 156838])]
+:END:
+
+#+BEGIN_SRC ipython :session :results raw drawer  :tangle yes
+srcest = mne.SourceEstimate(z, vertices, tmin=0., tstep=time_step)
+gen_eeg = mne.apply_forward(fwd_fixed, srcest, info)# / np.sum(z, axis=1)
+
+gen_eeg.data.shape
+
+#+END_SRC
+
+#+RESULTS:
+:RESULTS:
+# Out[17]:
+# output
+: Projecting source estimate to sensor space...
+: [done]
+: 
+# text/plain
+: (60, 2000)
+:END:
+
+# old code
+slplot.show_epoch_centered(x, 0, epoch_width_sec=300, chstart=0, chstop=10, fs=.5, ylabels=range(60), yscale=2.0)
+plt.title('Sample Data');
+
+
+#+BEGIN_SRC ipython :session :results raw drawer  :tangle yes
+fig = gen_eeg.plot(exclude=(), time_unit='s')
+
+
+#+END_SRC
+
+#+RESULTS:
+:RESULTS:
+# Out[18]:
+# text/plain
+: <Figure size 460.8x216 with 1 Axes>
+
+# image/png
+[[file:obipy-resources/7a6d47f4b6c88e7a53231cc12be3c37e-30668ROU.png]]
+:END:
+
+#+BEGIN_SRC ipython :session :results raw drawer  :tangle yes
+picks = mne.pick_types(gen_eeg.info, meg=False, eeg=True, eog=False)
+gen_eeg.plot(spatial_colors=True, gfp=True, picks=picks, time_unit='s')
+gen_eeg.plot_topomap(time_unit='s')
+
+#+END_SRC
+
+#+RESULTS:
+:RESULTS:
+# Out[19]:
+# text/plain
+: <Figure size 540x140.4 with 5 Axes>
+
+# image/png
+[[file:obipy-resources/7a6d47f4b6c88e7a53231cc12be3c37e-30668eYa.png]]
+
+# text/plain
+: <Figure size 460.8x216 with 2 Axes>
+
+# image/png
+[[file:obipy-resources/7a6d47f4b6c88e7a53231cc12be3c37e-30668rig.png]]
+
+# text/plain
+: <Figure size 540x140.4 with 5 Axes>
+
+# image/png
+[[file:obipy-resources/7a6d47f4b6c88e7a53231cc12be3c37e-306684sm.png]]
+:END:
+
+#+BEGIN_SRC ipython :session :results raw drawer  :tangle yes
+# plot 10s epochs (multiples in DE)
+from pylab import rcParams
+rcParams['figure.figsize'] = 20, 10
+
+
+signals = gen_eeg.data
+electrode_labels = list(range(n_sensors))
+ch0, ch1 = (0,19)
+DE = 1 # how many 10s epochs to display
+epoch = 0; ptepoch = 10*int(fs_gen)
+dp = 0 # int(0.5*ptepoch) # offset 
+slplot.stackplot(signals[ch0:ch1,epoch*ptepoch+dp:(epoch+DE)*ptepoch+dp],seconds=DE*10.0, ylabels=electrode_labels[ch0:ch1], yscale=0.3)
+
+
+#+END_SRC
+
+#+RESULTS:
+:RESULTS:
+# Out[20]:
+# text/plain
+: <Figure size 1440x720 with 1 Axes>
+
+# image/png
+[[file:obipy-resources/7a6d47f4b6c88e7a53231cc12be3c37e-30668F3s.png]]
+:END:
+
+#+BEGIN_SRC ipython :session :results raw drawer :tangle yes
+
+#+END_SRC
+
+#+RESULTS:
+:RESULTS:
+# Out[10]:
+:END:
