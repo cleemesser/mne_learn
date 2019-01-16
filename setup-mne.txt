@@ -29,7 +29,7 @@ I have gradually added in my other tools
 #. pytorch 1.0 (via conda)
 #. fastai 1.0 (via conda)
 #. eeghdf (eeg-hdfstorage) developer mode
-
+#. mne-features (via git clone/developer mode)
 The specific commands I used for fastai were::
 
     conda install -c pytorch -c fastai fastai
