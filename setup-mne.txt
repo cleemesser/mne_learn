@@ -1,15 +1,48 @@
-$ curl -O https://raw.githubusercontent.com/mne-tools/mne-python/master/environment.yml
-$ conda env create -f environment.yml
-$ conda activate mne
-# there may be some special extas to do for mac os
-# but this even works in basic form at least on windows 10!
+# -*- mode: rst -*-
+
+To set up mne-python
+--------------------
+I followed the `mne installation instructions <https://www.martinos.org/mne/stable/install_mne_python.html>`_
+::
+    $ curl -O https://raw.githubusercontent.com/mne-tools/mne-python/master/environment.yml
+    $ conda env create -f environment.yml
+    $ conda activate mne
+    # there may be some special extas to do for mac os
+    # but this even works in basic form at least on windows 10!
 
 
-make sure that environment variables are setup
-export MNE_ROOT=/usr/local/MNE-C
-export MNE_DATASETS_SAMPLE_PATH="$MNE_ROOT/data"
-export PATH="$PATH:$MNE_ROOT/bin"
-export LD
+make sure that environment variables are setup in .bashrc::
+
+    export MNE_ROOT=/usr/local/MNE-C
+    export MNE_DATASETS_SAMPLE_PATH="$MNE_ROOT/data"
+    . $MNE_ROOT/bin/mne_setup_sh
+    #export PATH="$PATH:$MNE_ROOT/bin"
+    #export LD
+
+
+mne-plus environment
+--------------------
+I have gradually added in my other tools
+
+#. xarray (via conda)
+#. bokeh  (via conda)
+#. pytorch 1.0 (via conda)
+#. fastai 1.0 (via conda)
+#. eeghdf (eeg-hdfstorage) developer mode
+
+The specific commands I used for fastai were::
+
+    conda install -c pytorch -c fastai fastai
+
+Note that JPEG decoding can be a bottleneck, particularly if you have a fast GPU.
+You can optionally install an optimized JPEG decoder as follows (Linux)::
+
+    conda uninstall --force jpeg libtiff -y
+    conda install -c conda-forge libjpeg-turbo
+    CC="cc -mavx2" pip install --no-cache-dir -U --force-reinstall --no-binary :all: --compile pillow-simd
+
+As I update these I am storing the specific environment definitons in mne_learn/etc/mne-plus-*
+
 
 
 MNE-C
