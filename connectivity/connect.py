@@ -19,9 +19,14 @@ raw_fname = 'bects_raw.fif'
 raw = io.read_raw_fif(raw_fname, preload=True)
 
 
-# events shape n_events, 3)
-# The first column specifies the sample number of each event, the second column is ignored, and the third column provides the event "value" this is an int which may have been stored in a stimulus channel so might be significant as a label or if it is changing or increasing (see mne.find_events)
+# events shape n_events, 3) The first column specifies the sample
+# number of each event, the second column is ignored, and the third
+# column provides the event "value" this is an int which may have been
+# stored in a stimulus channel so might be significant as a label or
+# if it is changing or increasing (see mne.find_events)
+
 # arbitrarily try two event_ids 1 and 2 as the third item value
+
 event_list = [[int(393.5*200), 0, 1], 
               [int(399.5*200), 1, 2],
               [int(410*200), 2, 1]]
@@ -74,18 +79,18 @@ sfreq = raw.info['sfreq']  # the sampling frequency
 #     # indices=indices, # why not do all of the channels :-)
 #     method='wpli2_debiased', mode='cwt_morlet', sfreq=sfreq,
 #     cwt_freqs=cwt_freqs, cwt_n_cycles=cwt_n_cycles, n_jobs=1)
-
+connectivity_method = 'coh' # wpli2_debiased
 con, freqs, times, n_epochs, n_tapers = spectral_connectivity(
     epochs,
     # indices=indices, # why not do all of the channels :-)
-    method='pli', mode='multitaper', sfreq=sfreq,
+    method=connectivity_method, mode='multitaper', sfreq=sfreq,
     fmin=12.0, fmax=30.0, faverage=True, n_jobs=1)
 
 # Mark the seed channel with a value of 1.0, so we can see it in the plot
 #con[np.where(indices[1] == seed)] = 1.0
 
 # Show topography of connectivity from seed
-title = 'WPLI2 - Visual - Seed %s' % seed_ch
+title = '%s - Visual - Seed %s' % (connectivity, seed_ch)
 
 layout = mne.find_layout(epochs.info, 'eeg')  # use full layout
 

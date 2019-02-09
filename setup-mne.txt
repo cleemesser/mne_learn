@@ -56,18 +56,25 @@ You can download a free runtime distribution of Matlab with the libraries necess
 
 install mayavi extension for jupyter notebook
 ---------------------------------------------
-$ jupyter nbextension install --py mayavi --user
-$ jupyter nbextension enable mayavi --user --py
+::
+   $ jupyter nbextension install --py mayavi --user
+   $ jupyter nbextension enable mayavi --user --py
 
-Then in he notebook you can do:
+Then in he notebook you can do::
+
   from mayavi import mlab
   mlab.init_notebook()
+..
 
+But I have gotten this to work for me in my turboVNC environment
+May want to check out `offscreen render info on mayavi <https://docs.enthought.com/mayavi/mayavi/tips.html#using-mayavi-in-jupyter-notebooks`_
+or using Mesa
+  
 
 remote TurboVNC use
 -------------------
 on host install virtualgl and turbovnc
-on client install turbovnc
+on client install turbovnc (downloaded from website)
 
 use vglrun ipython
 then can interact with mlab based graphics
@@ -76,8 +83,9 @@ then can interact with mlab based graphics
 
 
 
-################
-# note in the past to get mayavi working (with older qt versions) I used the menpo conda repo.
+Deprecated Methods
+------------------
+note in the past to get mayavi working (with older qt versions) I used the menpo conda repo.
 ex:
   conda create -n menpo36  mayavi -c menpo
 

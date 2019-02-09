@@ -2,6 +2,10 @@
 # 
 # get_ipython().run_line_magic('matplotlib', 'inline')
 # %matplotlib qt5
+
+# note: could the sample example use the 'mgh60' montage (older cap 60 channels + 3)
+
+
 print('this file relies upon already having the precomputed "sample_forward_model-fwd.fif')
 import mne
 import numpy as np
@@ -67,9 +71,10 @@ stimulate_sites = [841, 1170, 1329] # these seem to be in the central region dor
 # a sine wave with a coef
 # of 5*1e-8 can be seen on the brain activity view but not really n
 # the EEG sensor view. If make this 10 times bigger at 5*1e-7
-# then it sin wave shows up on multiple electrodes 
-
-z[stimulate_sites,:] = z[stimulate_sites,:] +  1e-7*np.sin(2*np.pi*10.0*t)
+# then it sin wave shows up on multiple electrodes
+# at 1e-6 it shows up everywere. Note these particular locations are near or in sulci
+source_scale = 5e-7
+z[stimulate_sites,:] = z[stimulate_sites,:] +  source_scale*np.sin(2*np.pi*10.0*t)
 
 # determine vertex number of ??? something in the fwd_fixed solution
 # vertices = [src_hemi['vertno'] for src_hemi in fwd_fixed['src']]
@@ -103,6 +108,7 @@ epoch = 0; ptepoch = 10*int(fs_gen)
 dp = 0 # int(0.5*ptepoch) # offset 
 slplot.stackplot(signals[ch0:ch1,epoch*ptepoch+dp:(epoch+DE)*ptepoch+dp],seconds=DE*10.0, ylabels=electrode_labels[ch0:ch1], yscale=0.3)
 
+gen_eeg.plot_sensors(show_names=True)
 
 ## this requires 3D graphics
 import numpy as np  # noqa

@@ -9,7 +9,7 @@ import eegvis.stacklineplot as stackplot
 FILENAME = '/mnt/data1/eegdbs/SEC-0.1/lpch/BA1230HG_1-1+.eeghdf'
 
 
-def ehdf2mne(hf):
+def sechdf2mne(hf):
     """@hf is an eeghdf Eeghdf object opened on a file
     from the stanford EEG corpus """
     
@@ -141,7 +141,7 @@ def ehdf2mne(hf):
 
 
 hf = eeghdf.Eeghdf(FILENAME)
-raw, info, useful_channels = ehdf2mne(hf)
+raw, info, useful_channels = sechdf2mne(hf)
 
 raw.plot(highpass=1.0, lowpass=40.0)
 

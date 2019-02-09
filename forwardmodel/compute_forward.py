@@ -11,8 +11,12 @@ trans = data_path + '/MEG/sample/sample_audvis_raw-trans.fif'
 
 
 # setup source space
-src = mne.setup_source_space(subject, spacing='oct6',
+src_oct6 = mne.setup_source_space(subject, spacing='oct6',
                              subjects_dir=subjects_dir, add_dist=False)
+
+src_oct5 = setup_source_space(subject, 'sample', spacing='oct5', subjects_dir=subject_dir)
+
+src = src_oct6
 print(src)
 
 # MEG
