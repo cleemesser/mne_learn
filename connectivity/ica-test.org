@@ -1,0 +1,1352 @@
+# -*- coding: utf-8 fill-column: 84 -*-
+
+
+* Going over Adembimpe 2016 - resting state analysis EEG
+
+** Overview
+Azeez Adembimpe et al. 2016.
+EEG Resting State Functional Connectivity Analysis in Children with Benign
+Epilepsy with Centrotemporal Spikes. Frontiers in
+Neuroscience investiaged FC between 84 Brodmann areas using lagged phase
+synchronization (LPS) in four frequency bands ($\delta$, $\theta$, $\alpha$,
+$\beta$) further computing network degree, clustering coefficient and
+efficency
+
+compared to controls:
+
+- patients displayed higher $\theta$ and $\alpha$ and lower $\beta$ LPS values
+
+- patients there were also characterized by less well ordered brain
+  networks exhibiting high global degrees and efficiencies and lower
+  clustering coefficients
+
+- in the $\beta$ band, patients exhibited reduced functional
+  segregation and integration due to loss of both local and
+  long-distance functional connections
+
+population: 12 healthy subjects for controls, 11 patients with
+childhood rolandic epilepsy with right centrotemporal spikes
+
+
+This paper references Adembimpe 2015. Functional Brain Dysfunction
+in Patients with Benign Childhood Epilepsy as Revealed by Graph
+Theory. That paper seems to show the graph theory methods so I will
+reference it as well for methods.
+
+notes
+- the periods of the EEG are described as being with and without spikes
+
+
+
+** Methods
+
+*** Preprocessing
+10-10 system HD EEG
+ - sampling 256Hz, ref to common average
+ - z-scored
+ - band-pass filtered between 0.5 and 40 Hz to exclude muscle activity
+ 
+EEG portions with occular and movemnet artifacts were identified automatically using
+thresholding methods (threshold was set to mean of the z-score distribution for
+each channel) as implemented in Fieldtrip software (oostenveld 2010;
+tutorial:visual_artifact_rejection - FieldTrip) and rejected by visual inspection.
+
+No ECG artifacts were visually observed in any EEG. 
+
+Artifact-free portions of the EEG were partitioned into 2 second quasi-stationary
+segments requred for spectral analysis with a frequency resolution of 0.5Hz. Five
+EEG segments of 2s were randomly selected for each patient and healthy control. The
+EEG segmented selected for patients included no centrotemporal spikes.
+
+
+*** Preprocessing in MNE
+    - Note taken on [2019-02-02 Sat 22:24] \\
+      q
+Here we
+- import libraries
+- load file
+- switch to common average reference
+- bandpass filter
+- 
+- note this leaves out marking bad channels
+#+BEGIN_SRC ipython :session :results raw drawer :tangle yes
+import matplotlib
+import matplotlib.pyplot as plt
+import numpy as np
+import mne
+import eeghdf
+import eegvis.stacklineplot as stackplot
+# grab a CECTS study
+
+# hf = eeghdf.Eeghdf(FILENAME)
+# raw, info, useful_channels = eeghdf.convert.sechdf1020_to_mne(hf)
+raw = mne.io.read_raw_fif('bects_raw.fif', preload=True)
+# events = mne.read_events('bects_raw-eve.fif')
+# some bogus events
+events = np.array([
+    [0, 0, 1],
+    [1, 0, 2],
+    [2, 0, 1],
+    [3, 0, 2],
+    [4, 0, 1],
+    [5, 0, 2],
+    [6, 0, 1],
+    [7, 0, 2],
+    [8, 0, 1],
+    [9, 0, 2],
+])
+# re-reference
+picks = mne.pick_types(raw.info, meg=False, eeg=True, eog=True, exclude='bads')
+reject = dict(eog=150e-6)
+event_id, tmin, tmax = 1, -0.2, 0.5 # define event id and duration
+fake_epochs_params = dict(events=events, event_id=event_id, tmin=tmin, tmax=tmax,
+                         picks=picks, reject=reject, proj=True) # events=events
+
+raw.set_eeg_reference(ref_channels='average', projection=False) # will exclude bad channels automatically
+# with projection=False this will apply the reference right away vs using apply_proj method
+
+
+raw0540 = raw.copy()
+# band-pass filtering in the range 0.5 Hz - 40 Hz
+raw0540.filter(0.5, 40., fir_design='firwin')
+
+raw.plot_psd(area_mode='range', tmax=10.0, picks=picks, average=False)
+raw0540.plot_psd(area_mode='range', tmax=10.0, picks=picks, average=False)
+"done"
+#+END_SRC
+
+#+RESULTS:
+:RESULTS:
+# Out[95]:
+# output
+: Opening raw data file /mnt/home2/clee/code/mne_learn/connectivity/bects_raw.fif...
+:     Range : 0 ... 381999 =      0.000 ...  1909.995 secs
+: Ready.
+: Reading 0 ... 381999  =      0.000 ...  1909.995 secs...
+: Applying average reference.
+: Applying a custom EEG reference.
+: Setting up band-pass filter from 0.5 - 40 Hz
+: l_trans_bandwidth chosen to be 0.5 Hz
+: h_trans_bandwidth chosen to be 10.0 Hz
+: Filter length of 1321 samples (6.605 sec) selected
+: Effective window size : 10.005 (s)
+: Effective window size : 10.005 (s)
+: 
+# text/plain
+: 'done'
+
+# text/plain
+: <Figure size 432x288 with 2 Axes>
+
+# image/png
+[[file:obipy-resources/83982ec5453be91d4e8229c8c2c2b734-vKokA5.png]]
+
+# text/plain
+: <Figure size 432x288 with 2 Axes>
+
+# image/png
+[[file:obipy-resources/83982ec5453be91d4e8229c8c2c2b734-F7DwBj.png]]
+:END:
+
+
+Note, Fieldtrip uses 'iir' filters - so may need to adjust these filters to match paper
+
+#+BEGIN_SRC ipython  :session :results raw drawer :tangle yes
+# find the blinks and other EOG events
+
+eog_events = mne.preprocessing.find_eog_events(raw)
+n_blinks = len(eog_events)
+# Center to cover the whole blink with full duration of 0.5s:
+onset = eog_events[:, 0] / raw.info['sfreq'] - 0.25
+duration = np.repeat(0.5, n_blinks)
+annot = mne.Annotations(onset, duration, ['bad blink'] * n_blinks,
+                        orig_time=raw.info['meas_date'])
+raw.set_annotations(annot)
+print(raw.annotations)  # to get information about what annotations we have
+#raw.plot(events=eog_events)  # To see the annotated segments.
+
+#+END_SRC
+
+#+RESULTS:
+:RESULTS:
+# Out[110]:
+# output
+: EOG channel index for this subject is: [19 20]
+: Filtering the data to remove DC offset to help distinguish blinks from saccades
+: Setting up band-pass filter from 2 - 45 Hz
+: Filter length of 2048 samples (10.240 sec) selected
+: Setting up band-pass filter from 2 - 45 Hz
+: Filter length of 2048 samples (10.240 sec) selected
+: Setting up band-pass filter from 1 - 10 Hz
+: Filter length of 2048 samples (10.240 sec) selected
+: Now detecting blinks and generating corresponding events
+: Number of EOG events detected : 198
+: <Annotations  |  198 segments : bad (198), orig_time : None>
+: 
+:END:
+
+*** EEG Source Connectivity Analysis
+
+#+BEGIN_SRC ipython :session :results raw drawer :tangle yes
+ecg_epochs = mne.preprocessing.create_ecg_epochs(raw, picks=picks)
+eog_epochs = mne.preprocessing.create_eog_epochs(raw, picks=picks)
+eog_average = eog_epochs.average(picks=picks)
+#+END_SRC
+
+#+RESULTS:
+:RESULTS:
+# Out[97]:
+# output
+: Using channel ECG X1 to identify heart beats.
+: Setting up band-pass filter from 8 - 16 Hz
+: Filter length of 2048 samples (10.240 sec) selected
+: Number of ECG events detected : 3799 (average pulse 119 / min.)
+: 3799 matching events found
+: No baseline correction applied
+: Not setting metadata
+: Loading data for 3799 events and 201 original time points ...
+: 486 bad epochs dropped
+: EOG channel index for this subject is: [19 20]
+: Filtering the data to remove DC offset to help distinguish blinks from saccades
+: Setting up band-pass filter from 2 - 45 Hz
+: Filter length of 2048 samples (10.240 sec) selected
+: Setting up band-pass filter from 2 - 45 Hz
+: Filter length of 2048 samples (10.240 sec) selected
+: Setting up band-pass filter from 1 - 10 Hz
+: Filter length of 2048 samples (10.240 sec) selected
+: Now detecting blinks and generating corresponding events
+: Number of EOG events detected : 25
+: 25 matching events found
+: No baseline correction applied
+: Not setting metadata
+: Loading data for 25 events and 201 original time points ...
+: 25 bad epochs dropped
+: /usr/local/anaconda3/envs/mne/lib/python3.6/site-packages/numpy/core/fromnumeric.py:2920: RuntimeWarning: Mean of empty slice.
+:   out=out, **kwargs)
+: /usr/local/anaconda3/envs/mne/lib/python3.6/site-packages/numpy/core/_methods.py:78: RuntimeWarning: invalid value encountered in true_divide
+:   ret, rcount, out=ret, casting='unsafe', subok=False)
+: <ipython-input-97-fdabb3062ab5>:3: RuntimeWarning: evoked object is empty (based on less than 1 epoch)
+:   eog_average = eog_epochs.average(picks=picks)
+: 
+:END:
+
+#+BEGIN_SRC ipython  :session :results raw drawer :tangle yes
+# try using ica method to look for highly non-gaussian projects
+method = 'fastica'
+n_components = 23
+random_state = 10
+ica = mne.preprocessing.ICA(n_components=n_components, method=method, random_state=random_state)
+print(ica)
+#+END_SRC
+
+#+RESULTS:
+:RESULTS:
+# Out[98]:
+# output
+: <ICA  |  no decomposition, fit (fastica):  samples, no dimension reduction>
+: 
+:END:
+
+
+#+BEGIN_SRC ipython  :session :results raw drawer :tangle yes
+ica.fit(raw, picks=picks, reject=reject)
+print(ica)
+#+END_SRC
+
+#+RESULTS:
+:RESULTS:
+# Out[99]:
+# output
+: Fitting ICA to data using 25 channels (please be patient, this may take a while)
+: Inferring max_pca_components from picks
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [1600, 2000]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [3200, 3600]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [3600, 4000]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [5200, 5600]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [5600, 6000]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [7600, 8000]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [8000, 8400]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [8400, 8800]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [8800, 9200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [10000, 10400]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [10400, 10800]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [11200, 11600]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [11600, 12000]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [15600, 16000]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [16800, 17200]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [18000, 18400]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [18400, 18800]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [18800, 19200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [19200, 19600]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [19600, 20000]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [20000, 20400]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [20400, 20800]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [21600, 22000]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [22000, 22400]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [22400, 22800]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [24400, 24800]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [26000, 26400]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [26400, 26800]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [26800, 27200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [27200, 27600]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [28400, 28800]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [28800, 29200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [29200, 29600]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [32800, 33200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [33200, 33600]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [33600, 34000]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [34000, 34400]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [34400, 34800]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [34800, 35200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [35200, 35600]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [36000, 36400]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [36400, 36800]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [36800, 37200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [37200, 37600]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [38000, 38400]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [39200, 39600]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [40000, 40400]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [40400, 40800]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [40800, 41200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [41200, 41600]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [41600, 42000]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [42000, 42400]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [42800, 43200]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [43200, 43600]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [44400, 44800]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [46000, 46400]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [46400, 46800]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [46800, 47200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [47200, 47600]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [48000, 48400]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [48800, 49200]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [49200, 49600]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [51200, 51600]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [52400, 52800]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [53200, 53600]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [53600, 54000]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [54000, 54400]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [54800, 55200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [55200, 55600]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [56000, 56400]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [56400, 56800]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [57200, 57600]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [58800, 59200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [66000, 66400]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [66400, 66800]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [66800, 67200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [67200, 67600]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [86400, 86800]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [93600, 94000]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [94400, 94800]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [98000, 98400]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [108000, 108400]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [110800, 111200]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [112000, 112400]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [112400, 112800]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [117600, 118000]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [124000, 124400]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [127200, 127600]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [128800, 129200]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [129600, 130000]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [133600, 134000]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [134000, 134400]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [134400, 134800]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [134800, 135200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [135200, 135600]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [138000, 138400]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [138400, 138800]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [138800, 139200]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [139200, 139600]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [139600, 140000]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [144000, 144400]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [151600, 152000]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [152000, 152400]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [154000, 154400]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [154800, 155200]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [157200, 157600]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [161600, 162000]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [162000, 162400]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [163200, 163600]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [166800, 167200]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [167600, 168000]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [168000, 168400]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [168400, 168800]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [170400, 170800]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [172000, 172400]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [176400, 176800]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [176800, 177200]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [178000, 178400]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [178400, 178800]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [178800, 179200]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [179200, 179600]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [182000, 182400]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [185200, 185600]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [185600, 186000]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [186000, 186400]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [186400, 186800]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [186800, 187200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [187200, 187600]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [192800, 193200]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [194400, 194800]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [194800, 195200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [195200, 195600]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [195600, 196000]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [198400, 198800]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [199600, 200000]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [200000, 200400]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [200400, 200800]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [202000, 202400]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [202400, 202800]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [202800, 203200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [203200, 203600]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [204000, 204400]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [206000, 206400]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [206800, 207200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [207200, 207600]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [208000, 208400]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [209200, 209600]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [209600, 210000]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [210000, 210400]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [210400, 210800]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [210800, 211200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [212000, 212400]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [212400, 212800]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [213200, 213600]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [214800, 215200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [215200, 215600]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [215600, 216000]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [216000, 216400]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [217200, 217600]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [217600, 218000]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [218000, 218400]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [218400, 218800]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [218800, 219200]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [220400, 220800]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [220800, 221200]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [221200, 221600]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [221600, 222000]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [223600, 224000]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [225200, 225600]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [225600, 226000]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [226000, 226400]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [226400, 226800]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [227200, 227600]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [227600, 228000]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [228000, 228400]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [228800, 229200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [229200, 229600]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [229600, 230000]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [230000, 230400]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [230400, 230800]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [231200, 231600]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [232000, 232400]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [233200, 233600]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [233600, 234000]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [234800, 235200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [235200, 235600]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [236400, 236800]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [236800, 237200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [238000, 238400]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [238400, 238800]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [238800, 239200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [239600, 240000]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [240000, 240400]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [240400, 240800]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [240800, 241200]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [241200, 241600]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [242800, 243200]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [243200, 243600]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [244000, 244400]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [244800, 245200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [245200, 245600]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [246000, 246400]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [247200, 247600]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [248000, 248400]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [248800, 249200]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [249600, 250000]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [250800, 251200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [251200, 251600]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [251600, 252000]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [252400, 252800]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [253600, 254000]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [254400, 254800]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [254800, 255200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [255200, 255600]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [255600, 256000]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [256000, 256400]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [256400, 256800]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [256800, 257200]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [257200, 257600]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [257600, 258000]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [258400, 258800]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [259200, 259600]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [259600, 260000]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [260000, 260400]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [260400, 260800]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [260800, 261200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [261600, 262000]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [262000, 262400]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [262400, 262800]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [262800, 263200]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [263200, 263600]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [263600, 264000]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [264400, 264800]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [265600, 266000]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [266000, 266400]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [266800, 267200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [267200, 267600]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [267600, 268000]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [268000, 268400]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [268400, 268800]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [268800, 269200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [269200, 269600]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [269600, 270000]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [270000, 270400]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [270400, 270800]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [270800, 271200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [271200, 271600]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [271600, 272000]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [272000, 272400]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [272800, 273200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [273200, 273600]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [273600, 274000]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [274000, 274400]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [274400, 274800]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [274800, 275200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [275200, 275600]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [275600, 276000]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [276000, 276400]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [276400, 276800]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [276800, 277200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [277200, 277600]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [277600, 278000]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [278000, 278400]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [278400, 278800]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [278800, 279200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [279200, 279600]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [279600, 280000]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [280000, 280400]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [280400, 280800]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [280800, 281200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [281200, 281600]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [281600, 282000]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [282000, 282400]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [282400, 282800]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [282800, 283200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [283200, 283600]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [283600, 284000]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [284000, 284400]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [284400, 284800]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [284800, 285200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [285200, 285600]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [285600, 286000]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [286000, 286400]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [286400, 286800]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [286800, 287200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [287200, 287600]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [287600, 288000]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [288000, 288400]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [288400, 288800]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [288800, 289200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [289200, 289600]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [289600, 290000]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [290000, 290400]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [291600, 292000]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [292400, 292800]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [292800, 293200]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [293200, 293600]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [293600, 294000]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [294800, 295200]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [296000, 296400]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [296800, 297200]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [298000, 298400]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [298400, 298800]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [298800, 299200]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [300000, 300400]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [301200, 301600]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [301600, 302000]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [302800, 303200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [303200, 303600]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [304400, 304800]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [304800, 305200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [305200, 305600]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [305600, 306000]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [306000, 306400]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [306400, 306800]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [306800, 307200]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [307200, 307600]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [307600, 308000]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [308000, 308400]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [308800, 309200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [309600, 310000]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [310000, 310400]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [310400, 310800]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [310800, 311200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [311200, 311600]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [311600, 312000]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [312400, 312800]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [313600, 314000]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [314000, 314400]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [315600, 316000]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [316000, 316400]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [316400, 316800]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [316800, 317200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [317200, 317600]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [317600, 318000]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [321600, 322000]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [322000, 322400]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [324400, 324800]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [324800, 325200]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [325200, 325600]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [325600, 326000]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [326400, 326800]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [328000, 328400]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [328400, 328800]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [328800, 329200]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [329200, 329600]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [329600, 330000]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [330000, 330400]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [330400, 330800]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [330800, 331200]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [331600, 332000]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [332000, 332400]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [332400, 332800]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [333600, 334000]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [334000, 334400]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [334400, 334800]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [337200, 337600]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [337600, 338000]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [340400, 340800]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [341200, 341600]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [348400, 348800]
+:     Rejecting  epoch based on EOG : ['Pg1']
+: Artifact detected in [349600, 350000]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [358400, 358800]
+:     Rejecting  epoch based on EOG : ['Pg1', 'Pg2']
+: Artifact detected in [358800, 359200]
+:     Rejecting  epoch based on EOG : ['Pg2']
+: Artifact detected in [359200, 359600]
+: Selection by number: 23 components
+: Fitting ICA took 3.4s.
+: <ICA  |  raw data decomposition, fit (fastica): 216000 samples, 23 components, channels used: "eeg">
+: 
+:END:
+
+
+#+BEGIN_SRC ipython  :session :results raw drawer :tangle yes
+ica.plot_components()
+#+END_SRC
+
+#+RESULTS:
+:RESULTS:
+# Out[100]:
+# text/plain
+: [<Figure size 540x504 with 20 Axes>, <Figure size 352.8x180 with 3 Axes>]
+
+# text/plain
+: <Figure size 540x504 with 20 Axes>
+
+# image/png
+[[file:obipy-resources/83982ec5453be91d4e8229c8c2c2b734-LVuuhK.png]]
+
+# text/plain
+: <Figure size 352.8x180 with 3 Axes>
+
+# image/png
+[[file:obipy-resources/83982ec5453be91d4e8229c8c2c2b734-dtNtde.png]]
+:END:
+
+
+#+BEGIN_SRC ipython :session :results raw drawer :tangle yes
+eog_events = mne.preprocessing.find_eog_events(raw)
+n_blinks = len(eog_events)
+blink_epochs = mne.epochs.Epochs(raw, events=eog_events, event_id=998, tmin=-0.3, tmax=0.6,
+                                 reject=dict(eeg=40e-6))
+print(f'n_blinks: {n_blinks}')
+#blinks_average = blink_epochs.average()
+blink_epochs
+#blinks_average.plot()
+#blinks_average
+#print(eog_events)
+#+END_SRC
+
+#+RESULTS:
+:RESULTS:
+# Out[107]:
+# output
+: EOG channel index for this subject is: [19 20]
+: Filtering the data to remove DC offset to help distinguish blinks from saccades
+: Setting up band-pass filter from 2 - 45 Hz
+: Filter length of 2048 samples (10.240 sec) selected
+: Setting up band-pass filter from 2 - 45 Hz
+: Filter length of 2048 samples (10.240 sec) selected
+: Setting up band-pass filter from 1 - 10 Hz
+: Filter length of 2048 samples (10.240 sec) selected
+: Now detecting blinks and generating corresponding events
+: Number of EOG events detected : 198
+: 198 matching events found
+: Applying baseline correction (mode: mean)
+: Not setting metadata
+: 0 projection items activated
+: n_blinks: 198
+: 
+# text/plain
+: <Epochs  |   198 events (good & bad), -0.3 - 0.6 sec, baseline [None, 0], ~70 kB, data not loaded,
+:  '998': 198>
+:END:
+
+#+BEGIN_SRC ipython  :session :results raw drawer :tangle yes
+eog_epochs = mne.preprocessing.create_eog_epochs(raw, reject=reject)
+eog_inds, scores = ica.find_bads_eog(inst=eog_epochs, start=10.0, reject_by_annotation=False, verbose=True)  # find via correlation
+#+END_SRC
+
+#+RESULTS:
+:RESULTS:
+# Out[109]:
+# output
+: 
+: ValueErrorTraceback (most recent call last)
+: <ipython-input-109-68dea95f6a50> in <module>
+:       1 eog_epochs = mne.preprocessing.create_eog_epochs(raw, reject=reject)
+: ----> 2 eog_inds, scores = ica.find_bads_eog(inst=eog_epochs, start=10.0, reject_by_annotation=False, verbose=True)  # find via correlation
+: 
+: /usr/local/anaconda3/envs/mne/lib/python3.6/site-packages/mne/preprocessing/ica.py in find_bads_eog(self, inst, ch_name, threshold, start, stop, l_freq, h_freq, reject_by_annotation, verbose)
+: 
+: /usr/local/anaconda3/envs/mne/lib/python3.6/site-packages/mne/utils.py in verbose(function, *args, **kwargs)
+:     949         # set it back if we get an exception
+:     950         with use_log_level(verbose_level):
+: --> 951             return function(*args, **kwargs)
+:     952     return function(*args, **kwargs)
+:     953 
+: 
+: /usr/local/anaconda3/envs/mne/lib/python3.6/site-packages/mne/preprocessing/ica.py in find_bads_eog(self, inst, ch_name, threshold, start, stop, l_freq, h_freq, reject_by_annotation, verbose)
+:    1226                 inst, target=target, score_func='pearsonr', start=start,
+:    1227                 stop=stop, l_freq=l_freq, h_freq=h_freq, verbose=verbose,
+: -> 1228                 reject_by_annotation=reject_by_annotation)]
+:    1229             # pick last scores
+:    1230             this_idx = find_outliers(scores[-1], threshold=threshold)
+: 
+: /usr/local/anaconda3/envs/mne/lib/python3.6/site-packages/mne/preprocessing/ica.py in score_sources(self, inst, target, score_func, start, stop, l_freq, h_freq, reject_by_annotation, verbose)
+: 
+: /usr/local/anaconda3/envs/mne/lib/python3.6/site-packages/mne/utils.py in verbose(function, *args, **kwargs)
+:     949         # set it back if we get an exception
+:     950         with use_log_level(verbose_level):
+: --> 951             return function(*args, **kwargs)
+:     952     return function(*args, **kwargs)
+:     953 
+: 
+: /usr/local/anaconda3/envs/mne/lib/python3.6/site-packages/mne/preprocessing/ica.py in score_sources(self, inst, target, score_func, start, stop, l_freq, h_freq, reject_by_annotation, verbose)
+:     976             _check_compensation_grade(self, inst, 'ICA', 'Epochs',
+:     977                                       ch_names=self.ch_names)
+: --> 978             sources = self._transform_epochs(inst, concatenate=True)
+:     979         elif isinstance(inst, Evoked):
+:     980             _check_compensation_grade(self, inst, 'ICA', 'Evoked',
+: 
+: /usr/local/anaconda3/envs/mne/lib/python3.6/site-packages/mne/preprocessing/ica.py in _transform_epochs(self, epochs, concatenate)
+:     732                                                  len(picks)))
+:     733 
+: --> 734         data = np.hstack(epochs.get_data()[:, picks])
+:     735         data, _ = self._pre_whiten(data, epochs.info, picks)
+:     736         sources = self._transform(data)
+: 
+: /usr/local/anaconda3/envs/mne/lib/python3.6/site-packages/numpy/core/shape_base.py in hstack(tup)
+:     286         return _nx.concatenate(arrs, 0)
+:     287     else:
+: --> 288         return _nx.concatenate(arrs, 1)
+:     289 
+:     290 
+: 
+: ValueError: need at least one array to concatenate
+:END:
+
+
+#+BEGIN_SRC ipython  :session :results raw drawer :tangle yes
+#eog_avg_events = eog_events.average()
+#eog_avg_events.plot()
+eog_inds, scores
+#+END_SRC
+
+#+RESULTS:
+:RESULTS:
+# Out[83]:
+# text/plain
+: ([3], [array([ 0.25586179,  0.51234997,  0.30895699,  0.03377495, -0.03051402,
+:          -0.16493766, -0.10465389, -0.47107823, -0.30854189,  0.24954805,
+:           0.01590736,  0.03424781, -0.23090633,  0.01833799,  0.06824685,
+:          -0.14524201,  0.03234886,  0.02968003, -0.08712754, -0.22779031,
+:           0.44758713,  0.02992569,  0.02457015]),
+:   array([ 0.11496837,  0.21294489, -0.09884   ,  0.92931472,  0.07138928,
+:          -0.17534142, -0.07139773, -0.19842669, -0.26608714,  0.13299793,
+:           0.11288494, -0.04646753, -0.05663661,  0.01371052, -0.0646246 ,
+:          -0.33050577, -0.20693685, -0.31965185, -0.10145822,  0.01687426,
+:           0.42899796, -0.04702223, -0.14016834])])
+:END:
+
+
+#+BEGIN_SRC ipython  :session :results raw drawer :tangle yes
+eog_events = mne.preprocessing.find_eog_events(raw)
+n_blinks = len(eog_events)
+blink_epochs = mne.epochs.Epochs(raw, eog_events, picks=picks)
+blinks_average = blink_epochs.average()
+blinks_average.plot()
+#+END_SRC
+
+#+RESULTS:
+:RESULTS:
+# Out[84]:
+# output
+: 
+: ValueErrorTraceback (most recent call last)
+: <ipython-input-84-29dbdf69446a> in <module>
+:       3 blink_epochs = mne.epochs.Epochs(raw, eog_events, picks=picks)
+:       4 blinks_average = blink_epochs.average()
+: ----> 5 blinks_average.plot()
+: 
+: /usr/local/anaconda3/envs/mne/lib/python3.6/site-packages/mne/evoked.py in plot(self, picks, exclude, unit, show, ylim, xlim, proj, hline, units, scalings, titles, axes, gfp, window_title, spatial_colors, zorder, selectable, noise_cov, time_unit, verbose)
+:     305             window_title=window_title, spatial_colors=spatial_colors,
+:     306             zorder=zorder, selectable=selectable, noise_cov=noise_cov,
+: --> 307             time_unit=time_unit, verbose=verbose)
+:     308 
+:     309     @copy_function_doc_to_method_doc(plot_evoked_image)
+: 
+: /usr/local/anaconda3/envs/mne/lib/python3.6/site-packages/mne/viz/evoked.py in plot_evoked(evoked, picks, exclude, unit, show, ylim, xlim, proj, hline, units, scalings, titles, axes, gfp, window_title, spatial_colors, zorder, selectable, noise_cov, time_unit, verbose)
+: 
+: /usr/local/anaconda3/envs/mne/lib/python3.6/site-packages/mne/utils.py in verbose(function, *args, **kwargs)
+:     950         with use_log_level(verbose_level):
+:     951             return function(*args, **kwargs)
+: --> 952     return function(*args, **kwargs)
+:     953 
+:     954 
+: 
+: /usr/local/anaconda3/envs/mne/lib/python3.6/site-packages/mne/viz/evoked.py in plot_evoked(evoked, picks, exclude, unit, show, ylim, xlim, proj, hline, units, scalings, titles, axes, gfp, window_title, spatial_colors, zorder, selectable, noise_cov, time_unit, verbose)
+:     734         gfp=gfp, window_title=window_title, spatial_colors=spatial_colors,
+:     735         selectable=selectable, zorder=zorder, noise_cov=noise_cov,
+: --> 736         time_unit=time_unit)
+:     737 
+:     738 
+: 
+: /usr/local/anaconda3/envs/mne/lib/python3.6/site-packages/mne/viz/evoked.py in _plot_evoked(evoked, picks, exclude, unit, show, ylim, proj, xlim, hline, units, scalings, titles, axes, plot_type, cmap, gfp, window_title, spatial_colors, set_tight_layout, selectable, zorder, noise_cov, colorbar, mask, mask_style, mask_cmap, mask_alpha, time_unit, show_names, group_by)
+:     330                     times, bad_ch_idx, titles, ch_types_used, selectable,
+:     331                     False, line_alpha=1., nave=evoked.nave,
+: --> 332                     time_unit=time_unit)
+:     333         plt.setp(axes, xlabel='Time (%s)' % time_unit)
+:     334 
+: 
+: /usr/local/anaconda3/envs/mne/lib/python3.6/site-packages/mne/viz/evoked.py in _plot_lines(data, info, picks, fig, axes, spatial_colors, unit, units, scalings, hline, gfp, types, zorder, xlim, ylim, times, bad_ch_idx, titles, ch_types_used, selectable, psd, line_alpha, nave, time_unit)
+:     411             # Set amplitude scaling
+:     412             D = this_scaling * data[idx, :]
+: --> 413             _check_if_nan(D)
+:     414             gfp_only = (isinstance(gfp, string_types) and gfp == 'only')
+:     415             if not gfp_only:
+: 
+: /usr/local/anaconda3/envs/mne/lib/python3.6/site-packages/mne/utils.py in _check_if_nan(data, msg)
+:    3170     """Raise if any of the values are NaN."""
+:    3171     if not np.isfinite(data).all():
+: -> 3172         raise ValueError("Some of the values {} are NaN.".format(msg))
+: 
+: ValueError: Some of the values  to be plotted are NaN.
+# text/plain
+: <Figure size 460.8x216 with 1 Axes>
+
+# image/png
+[[file:obipy-resources/83982ec5453be91d4e8229c8c2c2b734-D2i8PX.png]]
+:END:
+
+#+BEGIN_SRC ipython  :session :results raw drawer :tangle yes
+#eog_epochs = mne.epochs.Epochs(raw, events=eog_events)
+#eog_epochs = mne.preprocessing.create_eog_epochs(raw, reject=dict(eeg=40e-6), picks=picks)
+#eog_average = eog_epochs.average()
+
+
+#eog_inds, scores = ica.find_bads_eog(blinks_average) # find via correlation
+#ica.plot_scores(scores, exclude=eog_inds) # look at r scores of components
+#+END_SRC
+
+#+RESULTS:
+:RESULTS:
+# Out[85]:
+:END:
+
+
+#+BEGIN_SRC ipython  :session :results raw drawer :tangle yes
+ica.plot_sources(eog_average, exclude=eog_inds)
+#+END_SRC
+
+#+RESULTS:
+:RESULTS:
+# Out[86]:
+# text/plain
+: <Figure size 432x288 with 1 Axes>
+
+# image/png
+[[file:obipy-resources/83982ec5453be91d4e8229c8c2c2b734-w0J4Bi.png]]
+
+# text/plain
+: <Figure size 432x288 with 1 Axes>
+
+# image/png
+[[file:obipy-resources/83982ec5453be91d4e8229c8c2c2b734-HTLvuC.png]]
+:END:
+
+
+#+BEGIN_SRC ipython  :session :results raw drawer :tangle yes
+ica.plot_properties(eog_epochs, picks=eog_inds, psd_args={'fmax': 35.},
+                    image_args={'sigma': 1.})
+#+END_SRC
+
+#+RESULTS:
+:RESULTS:
+# Out[87]:
+# output
+: 
+: ValueErrorTraceback (most recent call last)
+: <ipython-input-87-b04fb0dac1a9> in <module>
+:       1 ica.plot_properties(eog_epochs, picks=eog_inds, psd_args={'fmax': 35.},
+: ----> 2                     image_args={'sigma': 1.})
+: 
+: /usr/local/anaconda3/envs/mne/lib/python3.6/site-packages/mne/preprocessing/ica.py in plot_properties(self, inst, picks, axes, dB, plot_std, topomap_args, image_args, psd_args, figsize, show)
+:    1513                                    topomap_args=topomap_args,
+:    1514                                    image_args=image_args, psd_args=psd_args,
+: -> 1515                                    figsize=figsize, show=show)
+:    1516 
+:    1517     @copy_function_doc_to_method_doc(plot_ica_sources)
+: 
+: /usr/local/anaconda3/envs/mne/lib/python3.6/site-packages/mne/viz/ica.py in plot_ica_properties(ica, inst, picks, axes, dB, plot_std, topomap_args, image_args, psd_args, figsize, show)
+:     313                             preload=True)
+:     314 
+: --> 315     epochs_src = ica.get_sources(inst)
+:     316     ica_data = np.swapaxes(epochs_src.get_data()[:, picks, :], 0, 1)
+:     317 
+: 
+: /usr/local/anaconda3/envs/mne/lib/python3.6/site-packages/mne/preprocessing/ica.py in get_sources(self, inst, add_channels, start, stop)
+:     809             _check_compensation_grade(self, inst, 'ICA', 'Epochs',
+:     810                                       ch_names=self.ch_names)
+: --> 811             sources = self._sources_as_epochs(inst, add_channels, False)
+:     812         elif isinstance(inst, Evoked):
+:     813             _check_compensation_grade(self, inst, 'ICA', 'Evoked',
+: 
+: /usr/local/anaconda3/envs/mne/lib/python3.6/site-packages/mne/preprocessing/ica.py in _sources_as_epochs(self, epochs, add_channels, concatenate)
+:     860         """Aux method."""
+:     861         out = epochs.copy()
+: --> 862         sources = self._transform_epochs(epochs, concatenate)
+:     863         if add_channels is not None:
+:     864             picks = [epochs.ch_names.index(k) for k in add_channels]
+: 
+: /usr/local/anaconda3/envs/mne/lib/python3.6/site-packages/mne/preprocessing/ica.py in _transform_epochs(self, epochs, concatenate)
+:     732                                                  len(picks)))
+:     733 
+: --> 734         data = np.hstack(epochs.get_data()[:, picks])
+:     735         data, _ = self._pre_whiten(data, epochs.info, picks)
+:     736         sources = self._transform(data)
+: 
+: /usr/local/anaconda3/envs/mne/lib/python3.6/site-packages/numpy/core/shape_base.py in hstack(tup)
+:     286         return _nx.concatenate(arrs, 0)
+:     287     else:
+: --> 288         return _nx.concatenate(arrs, 1)
+:     289 
+:     290 
+: 
+: ValueError: need at least one array to concatenate
+# text/plain
+: <Figure size 504x432 with 5 Axes>
+
+# image/png
+[[file:obipy-resources/83982ec5453be91d4e8229c8c2c2b734-RdtGxZ.png]]
+:END:
+
+
+#+BEGIN_SRC ipython  :session :results raw drawer :tangle yes
+print(ica.labels_)
+#+END_SRC
+
+#+RESULTS:
+:RESULTS:
+# Out[88]:
+# output
+: {}
+: 
+:END:
+
+
+#+BEGIN_SRC ipython  :session :results raw drawer :tangle yes
+# ica.plot_overlay(eog_average, exclude=eog_inds)
+#+END_SRC
+
+#+RESULTS:
+:RESULTS:
+# Out[89]:
+:END:
+
+
+#+BEGIN_SRC ipython  :session :results raw drawer :tangle yes
+
+#+END_SRC
+
+#+RESULTS:
+:RESULTS:
+# Out[89]:
+:END:
+
