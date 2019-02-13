@@ -1,5 +1,10 @@
+
+
+
 also check out MNE-HCP::
     http://mne-tools.github.io/mne-hcp/index.html
+
+and https://mne-tools.github.io/mne-features/auto_examples/index.html
 
 compare BEM vs sphere model
 ============================    

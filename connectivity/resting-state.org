@@ -39,7 +39,7 @@ notes
 
 
 ** Methods
-
+   
 *** Preprocessing
 10-10 system HD EEG
  - sampling 256Hz, ref to common average
@@ -1371,7 +1371,7 @@ to select out at random 5x2 second intervals.
 #+BEGIN_SRC python
 # reference to spectral_connectivity
 mne.connectivity.spectral_connectivity(data,
-                                       method='coh',
+                                       method='wpli',
                                        indices=None,
                                        sfreq=6.283185307179586,
                                        mode='multitaper',
@@ -1380,6 +1380,7 @@ mne.connectivity.spectral_connectivity(data,
                                        mt_adaptive=False, mt_low_bias=True,
                                        cwt_freqs=None, cwt_n_cycles=7, block_size=1000,
                                        n_jobs=1, verbose=None)
+
 
 data : array-like, shape=(n_epochs, n_signals, n_times) | Epochs
 The data from which to compute connectivity. Note that it is also possible to combine multiple signals by providing a list of tuples, e.g., data = [(arr_0, stc_0), (arr_1, stc_1), (arr_2, stc_2)], corresponds to 3 epochs, and arr_* could be an array with the same number of time points as stc_*. The array-like object can also be a list/generator of array, shape =(n_signals, n_times), or a list/generator of SourceEstimate or VolSourceEstimate objects.
